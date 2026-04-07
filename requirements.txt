@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pandas
+numpy
+scikit-learn
+yfinance
+requests
+dash
+plotly
