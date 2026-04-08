@@ -1066,6 +1066,7 @@ def build_dashboard(snapshot: Dict[str, Any], error_message: Optional[str] = Non
 
 
 app = Dash(__name__, title="WTI Crude Oil Valuation Model")
+server = app.server
 app.index_string = """
 <!DOCTYPE html>
 <html>
