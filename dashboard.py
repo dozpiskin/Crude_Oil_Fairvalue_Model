@@ -89,7 +89,8 @@ STATUS_THEMES = {
 }
 
 PAGE_STYLE = {
-    "minHeight": "100vh",
+    "minHeight": "calc(100vh + 16px)",
+    "margin": "-8px",
     "padding": "24px",
     "background": (
         "radial-gradient(circle at top left, rgba(8, 145, 178, 0.14), transparent 28%),"
@@ -98,6 +99,7 @@ PAGE_STYLE = {
     ),
     "color": COLOR_TEXT,
     "fontFamily": "'Segoe UI', 'Trebuchet MS', sans-serif",
+    "boxSizing": "border-box",
 }
 
 WRAPPER_STYLE = {
@@ -179,6 +181,14 @@ def format_score(value: Optional[float]) -> str:
     if float(value).is_integer():
         return f"{sign}{int(value)}"
     return f"{sign}{value:.1f}"
+
+
+def format_weight_pct(value: Optional[float]) -> str:
+    if value is None:
+        return "N/A"
+    if float(value).is_integer():
+        return f"{int(value)}%"
+    return f"{value:.1f}%"
 
 
 def format_timestamp(value: Optional[str]) -> str:
@@ -270,6 +280,26 @@ def build_price_vs_fair_value_figure(history: List[Dict[str, Any]]) -> go.Figure
     frame = pd.DataFrame(history)
 
     figure = go.Figure()
+    if frame.empty:
+        figure.add_annotation(
+            text="Historical model data unavailable",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            font={"color": COLOR_MUTED, "size": 16},
+        )
+        figure.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=360,
+            margin={"l": 10, "r": 10, "t": 10, "b": 10},
+            xaxis={"visible": False},
+            yaxis={"visible": False},
+        )
+        return figure
+
     figure.add_trace(
         go.Scatter(
             x=frame["date"],
@@ -277,7 +307,7 @@ def build_price_vs_fair_value_figure(history: List[Dict[str, Any]]) -> go.Figure
             mode="lines",
             name="Actual Price",
             line={"color": COLOR_CYAN, "width": 3},
-            hovertemplate="Date: %{x}<br>Actual: $%{y:.2f}<br>Gap: %{customdata:.2f}%<extra></extra>",
+            hovertemplate="Date: %{x}\nActual: $%{y:.2f}\nGap: %{customdata:.2f}%",
             customdata=frame["valuation_gap_pct"],
         )
     )
@@ -288,7 +318,7 @@ def build_price_vs_fair_value_figure(history: List[Dict[str, Any]]) -> go.Figure
             mode="lines",
             name="Model Fair Value",
             line={"color": "#fda4af", "width": 2.5, "dash": "dash"},
-            hovertemplate="Date: %{x}<br>Fair Value: $%{y:.2f}<extra></extra>",
+            hovertemplate="Date: %{x}\nFair Value: $%{y:.2f}",
         )
     )
     figure.update_layout(
@@ -313,13 +343,33 @@ def build_price_vs_fair_value_figure(history: List[Dict[str, Any]]) -> go.Figure
 
 def build_gap_history_figure(history: List[Dict[str, Any]]) -> go.Figure:
     frame = pd.DataFrame(history)
+    figure = go.Figure()
+    if frame.empty:
+        figure.add_annotation(
+            text="Historical gap data unavailable",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            font={"color": COLOR_MUTED, "size": 16},
+        )
+        figure.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=360,
+            margin={"l": 10, "r": 10, "t": 10, "b": 10},
+            xaxis={"visible": False},
+            yaxis={"visible": False},
+        )
+        return figure
+
     frame["hot_gap"] = frame["valuation_gap_pct"].where(frame["valuation_gap_pct"] > 10)
     frame["neutral_gap"] = frame["valuation_gap_pct"].where(
         frame["valuation_gap_pct"].between(-10, 10)
     )
     frame["cold_gap"] = frame["valuation_gap_pct"].where(frame["valuation_gap_pct"] < -10)
 
-    figure = go.Figure()
     figure.add_trace(
         go.Scatter(
             x=frame["date"],
@@ -364,7 +414,7 @@ def build_gap_history_figure(history: List[Dict[str, Any]]) -> go.Figure:
             name="Valuation Gap",
             line={"color": COLOR_WHITE, "width": 2.2},
             hovertemplate=(
-                "Date: %{x}<br>Gap: %{y:.2f}%<br>Temperature: %{customdata}<extra></extra>"
+                "Date: %{x}\nGap: %{y:.2f}%\nTemperature: %{customdata}"
             ),
             customdata=frame["temperature_label"],
         )
@@ -457,7 +507,7 @@ def build_header_panel(snapshot: Dict[str, Any]) -> html.Div:
                         style={"margin": "10px 0 0", "fontSize": "42px", "lineHeight": 1.05, "color": COLOR_WHITE},
                     ),
                     html.P(
-                        "A Python-native valuation dashboard blending macro proxies, inventories, volatility, and trend context into a transparent fair-value estimate.",
+                        "A Python-native valuation dashboard blending crude inventories, DXY, oil volatility, TIPS-implied inflation, credit growth expectations, and geopolitical risk into a transparent fair-value estimate.",
                         style={"maxWidth": "980px", "fontSize": "16px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "14px"},
                     ),
                 ]
@@ -533,7 +583,7 @@ def build_temperature_section(snapshot: Dict[str, Any]) -> html.Div:
                 style={"margin": "14px 0 0", "fontSize": "40px", "lineHeight": 1.08, "color": COLOR_WHITE},
             ),
             html.P(
-                "The model compares WTI spot price with an estimated fair value derived from the 50-day average, the weighted macro score, and an OVX-based volatility factor.",
+                "The model compares WTI spot price with an estimated fair value derived from the 50-day average, the weighted demand/supply macro score, and an OVX-based volatility factor.",
                 style={"fontSize": "15px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "12px"},
             ),
             dcc.Graph(
@@ -561,7 +611,7 @@ def build_temperature_section(snapshot: Dict[str, Any]) -> html.Div:
         [
             html.Div("Model Lens", style={"fontSize": "11px", "letterSpacing": "0.18em", "textTransform": "uppercase", "color": COLOR_MUTED}),
             html.P(
-                "This gauge is deliberately valuation-oriented rather than purely trend-following. Positive gaps imply the market is trading above the model's fair value estimate, while negative gaps imply potential undervaluation.",
+                "This gauge is deliberately valuation-oriented rather than purely trend-following. It now separates supply-risk premia, TIPS-implied inflation pressure, and forward credit growth expectations before estimating fair value.",
                 style={"fontSize": "15px", "lineHeight": 1.75, "color": "#cbd5e1", "marginTop": "12px"},
             ),
             html.Div(
@@ -723,6 +773,7 @@ def build_charts_section(snapshot: Dict[str, Any]) -> html.Div:
 
 
 def build_parameter_card(parameter: Dict[str, Any]) -> html.Div:
+    display_digits = int(parameter.get("display_digits", 2))
     deviation_display = (
         format_percent(parameter["deviation_pct"])
         if parameter["deviation_pct"] is not None
@@ -731,7 +782,7 @@ def build_parameter_card(parameter: Dict[str, Any]) -> html.Div:
     benchmark_display = (
         "Rule-based"
         if parameter["benchmark_value"] is None
-        else format_number(parameter["benchmark_value"])
+        else format_number(parameter["benchmark_value"], display_digits)
     )
 
     extras = []
@@ -754,7 +805,7 @@ def build_parameter_card(parameter: Dict[str, Any]) -> html.Div:
                         [
                             html.Div(parameter["name"], style={"fontSize": "16px", "fontWeight": 700, "color": COLOR_WHITE}),
                             html.Div(
-                                f'Weight {parameter["weight_pct"]}%',
+                                f'Weight {format_weight_pct(parameter["weight_pct"])}',
                                 style={"fontSize": "11px", "letterSpacing": "0.18em", "color": COLOR_MUTED, "textTransform": "uppercase", "marginTop": "4px"},
                             ),
                         ]
@@ -768,7 +819,7 @@ def build_parameter_card(parameter: Dict[str, Any]) -> html.Div:
                     html.Div(
                         [
                             html.Div("Current Value", style={"fontSize": "11px", "letterSpacing": "0.18em", "textTransform": "uppercase", "color": COLOR_MUTED}),
-                            html.Div(format_number(parameter["current_value"]), style={"fontSize": "34px", "fontWeight": 800, "color": COLOR_WHITE, "marginTop": "10px"}),
+                            html.Div(format_number(parameter["current_value"], display_digits), style={"fontSize": "34px", "fontWeight": 800, "color": COLOR_WHITE, "marginTop": "10px"}),
                             html.Div(parameter["unit"], style={"fontSize": "13px", "color": COLOR_MUTED, "marginTop": "4px"}),
                         ]
                     ),
@@ -805,15 +856,16 @@ def build_parameter_card(parameter: Dict[str, Any]) -> html.Div:
 def build_fundamentals_section(snapshot: Dict[str, Any]) -> html.Div:
     parameters = snapshot["fundamentals"]["parameters"]
     inventory_snapshot = snapshot["market_data"]["inventory_snapshot"]
+    driver_count = snapshot["fundamentals"].get("parameter_count", len(parameters))
 
     return html.Div(
         [
             app_panel(
                 [
                     html.Div("Fundamental Dashboard", style={"fontSize": "12px", "letterSpacing": "0.26em", "textTransform": "uppercase", "color": "#bae6fd", "fontWeight": 700}),
-                    html.H3("Five-Driver Scoring Framework", style={"margin": "12px 0 0", "fontSize": "30px", "color": COLOR_WHITE}),
+                    html.H3(f"{driver_count}-Driver Scoring Framework", style={"margin": "12px 0 0", "fontSize": "30px", "color": COLOR_WHITE}),
                     html.P(
-                        "Each parameter is scored from -2 to +2, weighted into a normalized macro score, and then fed into the fair-value equation to estimate how stretched current WTI pricing may be.",
+                        "Each parameter is scored from -2 to +2, weighted into a normalized macro score, and then fed into the fair-value equation to estimate how stretched current WTI pricing may be across inventories, dollar strength, trend context, volatility, geopolitical risk, implied inflation, and forward growth expectations.",
                         style={"fontSize": "15px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "10px"},
                     ),
                     sub_panel(
@@ -1008,7 +1060,7 @@ def build_loading_state() -> html.Div:
         [
             html.H2("Loading valuation model", style={"margin": 0, "fontSize": "34px", "color": COLOR_WHITE}),
             html.P(
-                "Pulling live WTI, DXY, OVX, and S&P 500 data, then rebuilding the fair-value and backtest history from Python.",
+                "Pulling live WTI, DXY, OVX, defense ETF, TIPS, Treasury, and credit ETF data, then rebuilding the fair-value and backtest history from Python.",
                 style={"fontSize": "15px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "12px"},
             ),
         ],
@@ -1067,30 +1119,6 @@ def build_dashboard(snapshot: Dict[str, Any], error_message: Optional[str] = Non
 
 app = Dash(__name__, title="WTI Crude Oil Valuation Model")
 server = app.server
-app.index_string = """
-<!DOCTYPE html>
-<html>
-    <head>
-        {%metas%}
-        <title>{%title%}</title>
-        {%favicon%}
-        {%css%}
-        <style>
-            html, body, #react-entry-point, #_dash-app-content { margin: 0; min-height: 100%; background: #050816; }
-            * { box-sizing: border-box; }
-            button { font: inherit; }
-        </style>
-    </head>
-    <body>
-        {%app_entry%}
-        <footer>
-            {%config%}
-            {%scripts%}
-            {%renderer%}
-        </footer>
-    </body>
-</html>
-"""
 
 app.layout = html.Div(
     [
