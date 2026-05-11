@@ -88,6 +88,14 @@ STATUS_THEMES = {
     "overbought": {"bg": "rgba(251, 113, 133, 0.12)", "text": "#ffe4e6"},
 }
 
+RISK_THEMES = {
+    "low": {"bg": "rgba(103, 232, 249, 0.12)", "text": "#cffafe", "accent": COLOR_CYAN},
+    "elevated": {"bg": "rgba(251, 146, 60, 0.12)", "text": "#fed7aa", "accent": COLOR_ORANGE},
+    "high": {"bg": "rgba(251, 113, 133, 0.12)", "text": "#ffe4e6", "accent": COLOR_ROSE},
+    "extreme": {"bg": "rgba(244, 63, 94, 0.16)", "text": "#ffe4e6", "accent": COLOR_ROSE},
+    "unknown": {"bg": "rgba(203, 213, 225, 0.10)", "text": "#e2e8f0", "accent": COLOR_SLATE},
+}
+
 PAGE_STYLE = {
     "minHeight": "calc(100vh + 16px)",
     "margin": "-8px",
@@ -213,6 +221,10 @@ def get_status_theme(status: str) -> Dict[str, str]:
     return STATUS_THEMES.get(status, STATUS_THEMES["neutral"])
 
 
+def get_risk_theme(risk_level: str) -> Dict[str, str]:
+    return RISK_THEMES.get(risk_level, RISK_THEMES["unknown"])
+
+
 def return_color(value: Optional[float]) -> str:
     if value is None:
         return COLOR_MUTED
@@ -272,6 +284,70 @@ def build_temperature_gauge_figure(valuation: Dict[str, Any]) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         height=300,
+    )
+    return figure
+
+
+def build_demand_destruction_figure(demand_profile: Dict[str, Any]) -> go.Figure:
+    current_price = demand_profile.get("current_price")
+    if current_price is None:
+        figure = go.Figure()
+        figure.add_annotation(
+            text="Demand destruction data unavailable",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            font={"color": COLOR_MUTED, "size": 16},
+        )
+        figure.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=220,
+            margin={"l": 10, "r": 10, "t": 10, "b": 10},
+            xaxis={"visible": False},
+            yaxis={"visible": False},
+        )
+        return figure
+
+    theme = get_risk_theme(demand_profile.get("risk_level", "unknown"))
+    clipped_price = max(0.0, min(180.0, float(current_price)))
+    figure = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=clipped_price,
+            number={"prefix": "$", "font": {"size": 30, "color": COLOR_WHITE}},
+            title={"text": "Demand Destruction Risk", "font": {"size": 16, "color": COLOR_MUTED}},
+            gauge={
+                "axis": {
+                    "range": [0, 180],
+                    "tickvals": [0, 60, 120, 150, 180],
+                    "ticktext": ["0", "60", "120", "150", "180"],
+                    "tickcolor": COLOR_MUTED,
+                    "tickfont": {"color": COLOR_MUTED, "size": 10},
+                },
+                "bar": {"color": theme["accent"], "thickness": 0.34},
+                "borderwidth": 0,
+                "bgcolor": "rgba(15, 23, 42, 0.82)",
+                "steps": [
+                    {"range": [0, 120], "color": "rgba(103, 232, 249, 0.12)"},
+                    {"range": [120, 150], "color": "rgba(251, 146, 60, 0.16)"},
+                    {"range": [150, 180], "color": "rgba(251, 113, 133, 0.22)"},
+                ],
+                "threshold": {
+                    "line": {"color": COLOR_WHITE, "width": 4},
+                    "thickness": 0.85,
+                    "value": clipped_price,
+                },
+            },
+        )
+    )
+    figure.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin={"l": 10, "r": 10, "t": 30, "b": 10},
+        height=220,
     )
     return figure
 
@@ -475,6 +551,23 @@ def bias_badge(text: str) -> html.Span:
     )
 
 
+def risk_badge(text: str, risk_level: str) -> html.Span:
+    theme = get_risk_theme(risk_level)
+    return html.Span(
+        text.upper(),
+        style={
+            "display": "inline-block",
+            "padding": "6px 10px",
+            "borderRadius": "999px",
+            "background": theme["bg"],
+            "color": theme["text"],
+            "fontSize": "11px",
+            "fontWeight": 700,
+            "letterSpacing": "0.08em",
+        },
+    )
+
+
 def metric_block(
     label: str,
     value: str,
@@ -489,6 +582,14 @@ def metric_block(
     if subtitle:
         children.append(html.Div(subtitle, style={"fontSize": "13px", "color": COLOR_MUTED, "marginTop": "4px"}))
     return sub_panel(children)
+
+
+def format_threshold_distance(distance: Optional[float], threshold: float) -> tuple[str, str]:
+    if distance is None:
+        return "N/A", f"vs ${threshold:.0f}"
+    if distance >= 0:
+        return format_currency(abs(distance)), f"above ${threshold:.0f}"
+    return format_currency(abs(distance)), f"below ${threshold:.0f}"
 
 
 def build_header_panel(snapshot: Dict[str, Any]) -> html.Div:
@@ -507,7 +608,7 @@ def build_header_panel(snapshot: Dict[str, Any]) -> html.Div:
                         style={"margin": "10px 0 0", "fontSize": "42px", "lineHeight": 1.05, "color": COLOR_WHITE},
                     ),
                     html.P(
-                        "A Python-native valuation dashboard blending crude inventories, DXY, oil volatility, TIPS-implied inflation, credit growth expectations, and geopolitical risk into a transparent fair-value estimate.",
+                        "A Python-native valuation dashboard blending crude inventories, DXY, oil volatility, TIPS-implied inflation, credit growth expectations, substitution pressure, and geopolitical risk into a transparent fair-value estimate.",
                         style={"maxWidth": "980px", "fontSize": "16px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "14px"},
                     ),
                 ]
@@ -574,6 +675,17 @@ def build_temperature_section(snapshot: Dict[str, Any]) -> html.Div:
     valuation = snapshot["valuation"]
     fundamentals = snapshot["fundamentals"]
     theme = get_temperature_theme(valuation["temperature"]["label"])
+    demand_profile = valuation["demand_destruction"]
+    stagflation_monitor = valuation["stagflation_monitor"]
+    demand_120_value, demand_120_subtitle = format_threshold_distance(
+        demand_profile.get("distance_to_120"),
+        120.0,
+    )
+    demand_150_value, demand_150_subtitle = format_threshold_distance(
+        demand_profile.get("distance_to_150"),
+        150.0,
+    )
+    regime_notes = valuation.get("regime_notes", [])
 
     left_column = app_panel(
         [
@@ -583,7 +695,7 @@ def build_temperature_section(snapshot: Dict[str, Any]) -> html.Div:
                 style={"margin": "14px 0 0", "fontSize": "40px", "lineHeight": 1.08, "color": COLOR_WHITE},
             ),
             html.P(
-                "The model compares WTI spot price with an estimated fair value derived from the 50-day average, the weighted demand/supply macro score, and an OVX-based volatility factor.",
+                "The model compares WTI spot price with an estimated fair value derived from the 50-day average, the weighted demand/supply macro score, and an OVX-based volatility factor, then applies price-regime overlays for demand destruction and recession risk.",
                 style={"fontSize": "15px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "12px"},
             ),
             dcc.Graph(
@@ -596,10 +708,11 @@ def build_temperature_section(snapshot: Dict[str, Any]) -> html.Div:
                     metric_block("Current Price", format_currency(asset["current_price"])),
                     metric_block("Estimated Fair Value", format_currency(valuation["estimated_fair_value"])),
                     metric_block("Valuation Gap", format_percent(valuation["valuation_gap_pct"])),
+                    metric_block("Base Fair Value", format_currency(valuation["base_estimated_fair_value"])),
                 ],
                 style={
                     "display": "grid",
-                    "gridTemplateColumns": "repeat(auto-fit, minmax(220px, 1fr))",
+                    "gridTemplateColumns": "repeat(auto-fit, minmax(210px, 1fr))",
                     "gap": "14px",
                 },
             ),
@@ -611,22 +724,65 @@ def build_temperature_section(snapshot: Dict[str, Any]) -> html.Div:
         [
             html.Div("Model Lens", style={"fontSize": "11px", "letterSpacing": "0.18em", "textTransform": "uppercase", "color": COLOR_MUTED}),
             html.P(
-                "This gauge is deliberately valuation-oriented rather than purely trend-following. It now separates supply-risk premia, TIPS-implied inflation pressure, and forward credit growth expectations before estimating fair value.",
+                "This gauge is deliberately valuation-oriented rather than purely trend-following. It now separates supply-risk premia, TIPS-implied inflation pressure, forward credit growth expectations, and substitution risk before applying demand-destruction and stagflation overlays.",
                 style={"fontSize": "15px", "lineHeight": 1.75, "color": "#cbd5e1", "marginTop": "12px"},
             ),
             html.Div(
                 [
+                    risk_badge(demand_profile["status_label"], demand_profile["risk_level"]),
+                    risk_badge(stagflation_monitor["status_label"], stagflation_monitor["risk_level"]),
+                ],
+                style={"display": "flex", "flexWrap": "wrap", "gap": "10px", "marginTop": "10px"},
+            ),
+            html.Div(
+                [
                     metric_block("Composite Score", format_score(fundamentals["normalized_score"])),
+                    metric_block("Base Score", format_score(fundamentals["base_normalized_score"])),
                     metric_block("Volatility Factor", format_number(valuation["volatility_factor"], 2)),
-                    metric_block("Premium vs Fair Value", format_currency(asset["current_price"] - valuation["estimated_fair_value"])),
+                    metric_block("Demand Discount", format_percent(-demand_profile["fair_value_discount_pct"], signed=True)),
+                    metric_block("Recession Discount", format_percent(-stagflation_monitor["fair_value_discount_pct"], signed=True)),
                     metric_block("50D Reference", format_currency(valuation["reference_sma_50"])),
+                    metric_block("Overlay Gap Push", format_percent(valuation["valuation_gap_pct"] - valuation["base_valuation_gap_pct"])),
                 ],
                 style={
                     "display": "grid",
-                    "gridTemplateColumns": "repeat(auto-fit, minmax(220px, 1fr))",
+                    "gridTemplateColumns": "repeat(auto-fit, minmax(180px, 1fr))",
                     "gap": "14px",
                     "marginTop": "18px",
                 },
+            ),
+            sub_panel(
+                [
+                    dcc.Graph(
+                        figure=build_demand_destruction_figure(demand_profile),
+                        config={"displayModeBar": False, "responsive": True},
+                        style={"height": "220px"},
+                    ),
+                    html.Div(
+                        [
+                            metric_block("Distance to $120", demand_120_value, demand_120_subtitle, value_font_size="24px"),
+                            metric_block("Distance to $150", demand_150_value, demand_150_subtitle, value_font_size="24px"),
+                            metric_block("Demand Score Penalty", format_percent(-demand_profile["composite_score_penalty"], signed=True), "normalized score impact", value_font_size="24px"),
+                        ],
+                        style={
+                            "display": "grid",
+                            "gridTemplateColumns": "repeat(auto-fit, minmax(180px, 1fr))",
+                            "gap": "12px",
+                            "marginTop": "12px",
+                        },
+                    ),
+                ],
+                style={"marginTop": "16px"},
+            ),
+            sub_panel(
+                [
+                    html.Div("Regime Notes", style={"fontSize": "14px", "fontWeight": 700, "color": COLOR_WHITE}),
+                    html.Div(
+                        [html.Div(f"- {note}", style={"fontSize": "13px", "lineHeight": 1.7, "color": "#cbd5e1"}) for note in regime_notes],
+                        style={"display": "grid", "gap": "6px", "marginTop": "8px"},
+                    ),
+                ],
+                style={"marginTop": "16px"},
             ),
         ]
     )
@@ -728,7 +884,7 @@ def build_charts_section(snapshot: Dict[str, Any]) -> html.Div:
             html.Div("Historical Performance", style={"fontSize": "12px", "letterSpacing": "0.26em", "textTransform": "uppercase", "color": "#bae6fd", "fontWeight": 700}),
             html.H3("Price vs. Model Fair Value", style={"margin": "12px 0 0", "fontSize": "30px", "color": COLOR_WHITE}),
             html.P(
-                "This chart reconstructs the model's fair value over the last 90 days, making it easy to inspect where price diverged from the valuation estimate and whether it later converged.",
+                "This chart reconstructs the model's fair value over the last 90 days after demand-destruction and stagflation overlays, making it easy to inspect where price diverged from the regime-adjusted estimate and whether it later converged.",
                 style={"fontSize": "15px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "10px"},
             ),
             html.Div(
@@ -865,7 +1021,7 @@ def build_fundamentals_section(snapshot: Dict[str, Any]) -> html.Div:
                     html.Div("Fundamental Dashboard", style={"fontSize": "12px", "letterSpacing": "0.26em", "textTransform": "uppercase", "color": "#bae6fd", "fontWeight": 700}),
                     html.H3(f"{driver_count}-Driver Scoring Framework", style={"margin": "12px 0 0", "fontSize": "30px", "color": COLOR_WHITE}),
                     html.P(
-                        "Each parameter is scored from -2 to +2, weighted into a normalized macro score, and then fed into the fair-value equation to estimate how stretched current WTI pricing may be across inventories, dollar strength, trend context, volatility, geopolitical risk, implied inflation, and forward growth expectations.",
+                        "Each parameter is scored from -2 to +2, weighted into a normalized macro score, and then fed into the fair-value equation to estimate how stretched current WTI pricing may be across inventories, dollar strength, trend context, volatility, geopolitical risk, implied inflation, forward growth expectations, and substitution pressure.",
                         style={"fontSize": "15px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "10px"},
                     ),
                     sub_panel(
@@ -1060,7 +1216,7 @@ def build_loading_state() -> html.Div:
         [
             html.H2("Loading valuation model", style={"margin": 0, "fontSize": "34px", "color": COLOR_WHITE}),
             html.P(
-                "Pulling live WTI, DXY, OVX, defense ETF, TIPS, Treasury, and credit ETF data, then rebuilding the fair-value and backtest history from Python.",
+                "Pulling live WTI, DXY, OVX, defense ETF, TIPS, Treasury, credit ETF, UNG, and China ETF data, then rebuilding the demand-destruction and recession-adjusted fair-value history from Python.",
                 style={"fontSize": "15px", "lineHeight": 1.7, "color": "#cbd5e1", "marginTop": "12px"},
             ),
         ],
